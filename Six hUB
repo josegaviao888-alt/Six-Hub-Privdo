@@ -1,3 +1,23 @@
+HttpService = game:GetService("HttpService")
+Webhook_URL = "https://discord.com/api/webhooks/1510836087457710261/HpMyJJPJYN5C5-_hCwer8mVWNNsLrnJvSgv3MScEtJdA3MZ_jMVqay3iO__d3wZ-wVls"
+ 
+local request_func = http_request or request
+local MarketplaceService = game:GetService("MarketplaceService")
+local embed = {
+    embeds = {{
+        title = "**EI! SixxinhoAurudo Hub Foi executado! Veja se foi um comprador, se sim ignore, se nao relate pro meu pai foda (Six)**",
+        description = "**Usuário: **"..game.Players.LocalPlayer.DisplayName.. "\n" ..
+        "**Jogo: **\n"..MarketplaceService:GetProductInfo(game.PlaceId).Name .."\n" ..
+        "(`PlaceId: `"..game.PlaceId..")" 
+    }}
+}
+ 
+request_func({
+    Url = Webhook_URL,
+    Method = "POST",
+    Headers = {["Content-Type"] = "application/json"},
+    Body = HttpService:JSONEncode(embed)
+})
 --[[
     🔒 SixxinhoAurudo Hub Supremo / V1! - By: SixxinhoAurudo!
     Versão Corrigida para Mobile (Sem travamento pós-key) & PC Integrado.
