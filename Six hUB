@@ -1,0 +1,1399 @@
+--[[
+    🔒 SixxinhoAurudo Hub Supremo / V1! - By: SixxinhoAurudo!
+    Versão Corrigida para Mobile (Sem travamento pós-key) & PC Integrado.
+]]
+
+--// AGUARDAR CARREGAMENTO DO JOGO
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+--// SERVICES
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+--// PLAYER
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui", 10)
+
+--// DETECTAR PLATAFORMA (MOBILE FIX)
+local IsMobile = table.find({Enum.Platform.Android, Enum.Platform.IOS}, UserInputService:GetPlatform()) or UserInputService.TouchEnabled
+
+--// DEFINIR PARENT DA UI (SEGURO PARA MOBILE)
+local TargetGuiParent = PlayerGui
+if not IsMobile and CoreGui and pcall(function() local a = CoreGui.Name end) then
+    TargetGuiParent = CoreGui
+end
+
+--// CONFIGURAÇÕES GERAIS
+local SprintSettings = {
+    Enabled = false,
+    NormalSpeed = 16,
+    SprintSpeed = 24
+}
+
+local AbsurdoConfig = {
+    Enabled = false
+}
+
+local ReachSettings = {
+    ReachEnabled = false,
+    ReachSize = Vector3.new(40, 40, 40)
+}
+
+local DesarmeConfig = {
+    Enabled = false,
+    Sizes = {
+        Back = Vector3.new(12, 16, 40),
+        Leg = Vector3.new(12, 40, 12)
+    }
+}
+
+local ChicleteConfig = {
+    Enabled = false,
+    CurrentBall = nil,
+    BodyPos = nil,
+    BodyG = nil
+}
+
+-- CONFIGURAÇÃO INTEGRADA: THEUS SCRIPT REACH
+local ArmReachConfig = {
+    Enabled = false,
+    OriginalSize = nil,
+    OriginalTransparency = nil
+}
+
+--// REMOVE ANTIGOS PARA EVITAR SOBREPOSIÇÃO
+pcall(function()
+    if TargetGuiParent:FindFirstChild("SixxinhoAurudoHubV1") then TargetGuiParent["SixxinhoAurudoHubV1"]:Destroy() end
+    if PlayerGui:FindFirstChild("SixxinhoAurudoHubV1") then PlayerGui["SixxinhoAurudoHubV1"]:Destroy() end
+end)
+
+--// CHARACTER CONFIG & SECURITY LOGIC
+local Humanoid
+local speedConnection = nil
+
+local function GetRightArm(character)
+    if not character then return nil end
+    return character:WaitForChild("RightHand", 5) or character:WaitForChild("Right Arm", 5)
+end
+
+local function ApplyArmReach(character)
+    if not ArmReachConfig.Enabled then return end
+    local arm = GetRightArm(character)
+    if arm then
+        if not ArmReachConfig.OriginalSize then
+            ArmReachConfig.OriginalSize = arm.Size
+            ArmReachConfig.OriginalTransparency = arm.Transparency
+        end
+        arm.Size = Vector3.new(20, 20, 20)
+        arm.Transparency = 0.8
+        arm.Massless = true
+        arm.CanCollide = false
+    end
+end
+
+local function ResetArmReach(character)
+    local arm = GetRightArm(character)
+    if arm and ArmReachConfig.OriginalSize then
+        arm.Size = ArmReachConfig.OriginalSize
+        arm.Transparency = ArmReachConfig.OriginalTransparency
+        arm.Massless = false
+        arm.CanCollide = true
+    end
+end
+
+local function ApplySpeed(character)
+    if not character then return end
+    Humanoid = character:WaitForChild("Humanoid", 5)
+    if Humanoid then
+        if SprintSettings.Enabled then
+            Humanoid.WalkSpeed = SprintSettings.SprintSpeed
+        else
+            Humanoid.WalkSpeed = SprintSettings.NormalSpeed
+        end
+        
+        if speedConnection then speedConnection:Disconnect() end
+        
+        speedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if SprintSettings.Enabled and Humanoid.WalkSpeed ~= SprintSettings.SprintSpeed then
+                Humanoid.WalkSpeed = SprintSettings.SprintSpeed
+            elseif not SprintSettings.Enabled and Humanoid.WalkSpeed ~= SprintSettings.NormalSpeed then
+                Humanoid.WalkSpeed = SprintSettings.NormalSpeed
+            end
+        end)
+    end
+    
+    if ArmReachConfig.Enabled then
+        task.wait(0.2)
+        ApplyArmReach(character)
+    end
+end
+
+if Player.Character then task.spawn(ApplySpeed, Player.Character) end
+Player.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    ApplySpeed(char)
+end)
+
+--// LÓGICA DO SEU ANTI SIT
+local AntiSit = false
+local AntiSitConnection
+
+local function EnableAntiSit()
+    if AntiSitConnection then AntiSitConnection:Disconnect() end
+
+    AntiSitConnection = RunService.Heartbeat:Connect(function()
+        local Character = Player.Character
+        if not Character then return end
+
+        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+        if not Humanoid then return end
+
+        if Humanoid.Sit then
+            Humanoid.Sit = false
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        end
+    end)
+end
+
+local function DisableAntiSit()
+    if AntiSitConnection then
+        AntiSitConnection:Disconnect()
+        AntiSitConnection = nil
+    end
+
+    local Character = Player.Character
+    if Character then
+        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+        if Humanoid then
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        end
+    end
+end
+
+_G.AntiSitOn = function()
+    AntiSit = true
+    EnableAntiSit()
+    print("✅ Anti Sentar ATIVADO")
+end
+
+_G.AntiSitOff = function()
+    AntiSit = false
+    DisableAntiSit()
+    print("❌ Anti Sentar DESATIVADO")
+end
+
+
+--// MOTOR CHICLETÃO (ENCONTRAR BOLA)
+local function FindBrookhavenBall()
+    local workspaceDescendants = workspace:GetChildren()
+    for i = 1, #workspaceDescendants do
+        local obj = workspaceDescendants[i]
+        if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+            local name = obj.Name:lower()
+            if (name:find("ball") or name:find("bola") or name:find("soccer") or name:find("football") or name:find("chiclete")) and not obj:IsDescendantOf(Player.Character) then
+                if obj.Shape == Enum.PartType.Ball or (obj:FindFirstChildOfClass("SpecialMesh") and obj:FindFirstChildOfClass("SpecialMesh").MeshType == Enum.MeshType.Sphere) then
+                    return obj
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function ReleaseChicleteBall()
+    if ChicleteConfig.BodyPos then pcall(function() ChicleteConfig.BodyPos:Destroy() end) ChicleteConfig.BodyPos = nil end
+    if ChicleteConfig.BodyG then pcall(function() ChicleteConfig.BodyG:Destroy() end) ChicleteConfig.BodyG = nil end
+    ChicleteConfig.CurrentBall = nil
+end
+
+local function ProcessChicleteMagnet()
+    if not ChicleteConfig.Enabled then return end
+    local character = Player.Character
+    if not character then return end
+    
+    local head = character:FindFirstChild("Head")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not head or not root then return end
+    
+    if not ChicleteConfig.CurrentBall or not ChicleteConfig.CurrentBall.Parent then
+        ChicleteConfig.CurrentBall = FindBrookhavenBall()
+        if not ChicleteConfig.CurrentBall then return end
+    end
+    
+    pcall(function()
+        if not ChicleteConfig.BodyPos then
+            ChicleteConfig.BodyPos = Instance.new("BodyPosition")
+            ChicleteConfig.BodyPos.MaxForce = Vector3.new(50000, 50000, 50000)
+            ChicleteConfig.BodyPos.P = 15000
+            ChicleteConfig.BodyPos.D = 500
+            ChicleteConfig.BodyPos.Parent = ChicleteConfig.CurrentBall
+        end
+        
+        if not ChicleteConfig.BodyG then
+            ChicleteConfig.BodyG = Instance.new("BodyGyro")
+            ChicleteConfig.BodyG.MaxTorque = Vector3.new(50000, 50000, 50000)
+            ChicleteConfig.BodyG.P = 10000
+            ChicleteConfig.BodyG.Parent = ChicleteConfig.CurrentBall
+        end
+        
+        local targetPos = head.Position + (root.CFrame.LookVector * 4) + Vector3.new(0, 6, 0)
+        ChicleteConfig.BodyPos.Position = targetPos
+        ChicleteConfig.BodyG.CFrame = root.CFrame
+    end)
+end
+
+--// MOTOR DE GERENCIAMENTO DE HITBOXES
+local function RemoveReachHitbox(p)
+    pcall(function()
+        if p and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local hitBox = root:FindFirstChild("SuperChuteHitbox")
+                if hitBox then hitBox:Destroy() end
+            end
+        end
+    end)
+end
+
+local function RemoveDesarmeHitbox(p)
+    pcall(function()
+        if p and p.Character then
+            local character = p.Character
+            local back = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+            if back then
+                local box = back:FindFirstChild("DesarmeBack")
+                if box then box:Destroy() end
+            end
+            
+            local legs = {"LeftLeg", "RightLeg", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg"}
+            for _, legName in ipairs(legs) do
+                local leg = character:FindFirstChild(legName)
+                if leg then
+                    local box = leg:FindFirstChild("DesarmeLeg")
+                    if box then box:Destroy() end
+                end
+            end
+        end
+    end)
+end
+
+-- Loop Unificado de Física Geral
+local PhysicsConnection
+PhysicsConnection = RunService.Heartbeat:Connect(function()
+    if ChicleteConfig.Enabled then ProcessChicleteMagnet() end
+
+    local allPlayers = Players:GetPlayers()
+    for i = 1, #allPlayers do
+        local p = allPlayers[i]
+        if p ~= Player and p.Character then
+            local char = p.Character
+            
+            if AbsurdoConfig.Enabled then
+                pcall(function()
+                    for _, part in ipairs(char:GetChildren()) do
+                        if part:IsA("BasePart") then part.CanCollide = false end
+                    end
+                end)
+            end
+            
+            if ReachSettings.ReachEnabled then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local hitBox = root:FindFirstChild("SuperChuteHitbox")
+                    if not hitBox then
+                        pcall(function()
+                            hitBox = Instance.new("Part")
+                            hitBox.Name = "SuperChuteHitbox"
+                            hitBox.Size = ReachSettings.ReachSize
+                            hitBox.Transparency = 1
+                            hitBox.CanCollide = false
+                            hitBox.Massless = true
+                            hitBox.Parent = root
+                            
+                            local weld = Instance.new("ManualWeld")
+                            weld.Name = "HitboxWeld"
+                            weld.Part0 = root
+                            weld.Part1 = hitBox
+                            weld.C0 = CFrame.new(0, 0, 0)
+                            weld.Parent = hitBox
+                        end)
+                    end
+                end
+            end
+            
+            if DesarmeConfig.Enabled then
+                local back = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+                if back and not back:FindFirstChild("DesarmeBack") then
+                    pcall(function()
+                        local backBox = Instance.new("Part")
+                        backBox.Name = "DesarmeBack"
+                        backBox.Size = DesarmeConfig.Sizes.Back
+                        backBox.Transparency = 1
+                        backBox.CanCollide = false
+                        backBox.Massless = true
+                        backBox.Parent = back
+                        
+                        local weld = Instance.new("ManualWeld")
+                        weld.Part0 = back
+                        weld.Part1 = backBox
+                        weld.C0 = CFrame.new(0, 0, 20)
+                        weld.Parent = backBox
+                    end)
+                end
+                
+                local legs = {"LeftLeg", "RightLeg", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg"}
+                for _, legName in ipairs(legs) do
+                    local leg = char:FindFirstChild(legName)
+                    if leg and not leg:FindFirstChild("DesarmeLeg") then
+                        pcall(function()
+                            local legBox = Instance.new("Part")
+                            legBox.Name = "DesarmeLeg"
+                            legBox.Size = DesarmeConfig.Sizes.Leg
+                            legBox.Transparency = 1
+                            legBox.CanCollide = false
+                            legBox.Massless = true
+                            legBox.Parent = leg
+                            
+                            local weld = Instance.new("ManualWeld")
+                            weld.Part0 = leg
+                            weld.Part1 = legBox
+                            weld.C0 = CFrame.new(0, -15, 0)
+                            weld.Parent = legBox
+                        end)
+                    end
+                end
+            end
+            
+        end
+    end
+end)
+
+local function CleanAllReach()
+    for _, p in ipairs(Players:GetPlayers()) do RemoveReachHitbox(p) end
+end
+
+local function CleanAllDesarme()
+    for _, p in ipairs(Players:GetPlayers()) do RemoveDesarmeHitbox(p) end
+end
+
+--// GUI PRINCIPAL
+local GUI = Instance.new("ScreenGui")
+GUI.Name = "SixxinhoAurudoHubV1"
+GUI.ResetOnSpawn = false
+GUI.Parent = TargetGuiParent
+
+--// BLUR (APENAS PARA PC PARA EVITAR CRASH NO MOBILE)
+local Blur = nil
+if not IsMobile then
+    Blur = Lighting:FindFirstChild("LoganBlur") or Instance.new("BlurEffect")
+    Blur.Name = "LoganBlur"
+    Blur.Size = 14
+    Blur.Parent = Lighting
+end
+
+--// MAIN FRAME
+local Main = Instance.new("Frame")
+Main.Name = "MainFrame"
+Main.Size = UDim2.new(0, 580, 0, 360)
+Main.Position = UDim2.new(0.5, -290, 0.5, -180)
+Main.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Visible = false -- Oculto até passar pela Key
+Main.Parent = GUI
+
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 18)
+local Stroke = Instance.new("UIStroke", Main)
+Stroke.Color = Color3.fromRGB(255, 215, 0)
+Stroke.Thickness = 1.5
+
+--// SYSTEM UNIVERSAL DE ARRASTAR
+local function MakeDraggable(uiElement)
+    local dragToggle, dragStart, startPos
+    uiElement.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragToggle = true
+            dragStart = input.Position
+            startPos = uiElement.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragToggle and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            uiElement.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragToggle = false
+        end
+    end)
+end
+MakeDraggable(Main)
+
+--// BOTÃO OPEN MÓVEL / FLUTUANTE
+local Open = Instance.new("TextButton")
+Open.Size = UDim2.new(0, 55, 0, 55)
+Open.Position = UDim2.new(0.02, 0, 0.5, 0)
+Open.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+Open.Text = "🔒"
+Open.TextColor3 = Color3.fromRGB(255, 215, 0)
+Open.Font = Enum.Font.GothamBlack
+Open.TextSize = 24
+Open.BorderSizePixel = 0
+Open.Active = true
+Open.Visible = false -- Oculto até passar pela Key
+Open.Parent = GUI
+
+Instance.new("UICorner", Open).CornerRadius = UDim.new(1, 0)
+local OpenStroke = Instance.new("UIStroke", Open)
+OpenStroke.Color = Color3.fromRGB(255, 215, 0)
+MakeDraggable(Open)
+
+
+--=========================================
+--        SISTEMA DE KEY CONFIG
+--=========================================
+local CorrectKey = "SWGK"
+local ErrorCount = 0
+
+local KeyFrame = Instance.new("Frame")
+KeyFrame.Name = "KeyVerificationFrame"
+KeyFrame.Size = UDim2.new(0, 340, 0, 220)
+KeyFrame.Position = UDim2.new(0.5, -170, 0.5, -110)
+KeyFrame.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+KeyFrame.BorderSizePixel = 0
+KeyFrame.Active = true
+KeyFrame.Parent = GUI
+
+Instance.new("UICorner", KeyFrame).CornerRadius = UDim.new(0, 16)
+local KeyStroke = Instance.new("UIStroke", KeyFrame)
+KeyStroke.Color = Color3.fromRGB(255, 215, 0)
+KeyStroke.Thickness = 1.5
+MakeDraggable(KeyFrame)
+
+local KeyTitle = Instance.new("TextLabel")
+KeyTitle.Size = UDim2.new(1, 0, 0, 45)
+KeyTitle.BackgroundTransparency = 1
+KeyTitle.Text = "🔑 SISTEMA DE VALIDAÇÃO"
+KeyTitle.Font = Enum.Font.GothamBlack
+KeyTitle.TextSize = 14
+KeyTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+KeyTitle.Parent = KeyFrame
+
+local KeyInput = Instance.new("TextBox")
+KeyInput.Size = UDim2.new(0.85, 0, 0, 40)
+KeyInput.Position = UDim2.new(0.075, 0, 0.3, 0)
+KeyInput.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+KeyInput.BorderSizePixel = 0
+KeyInput.Text = ""
+KeyInput.PlaceholderText = "Insira a chave aqui..."
+KeyInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+KeyInput.Font = Enum.Font.GothamBold
+KeyInput.TextSize = 14
+KeyInput.TextColor3 = Color3.new(1, 1, 1)
+KeyInput.Parent = KeyFrame
+Instance.new("UICorner", KeyInput).CornerRadius = UDim.new(0, 8)
+
+local KeyInputStroke = Instance.new("UIStroke", KeyInput)
+KeyInputStroke.Color = Color3.fromRGB(40, 40, 40)
+KeyInputStroke.Thickness = 1
+
+local EnterBtn = Instance.new("TextButton")
+EnterBtn.Size = UDim2.new(0.85, 0, 0, 42)
+EnterBtn.Position = UDim2.new(0.075, 0, 0.58, 0)
+EnterBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+EnterBtn.Text = "Enter!"
+EnterBtn.TextColor3 = Color3.fromRGB(14, 14, 14)
+EnterBtn.Font = Enum.Font.GothamBlack
+EnterBtn.TextSize = 14
+EnterBtn.BorderSizePixel = 0
+EnterBtn.Parent = KeyFrame
+Instance.new("UICorner", EnterBtn).CornerRadius = UDim.new(0, 8)
+
+local AttemptLabel = Instance.new("TextLabel")
+AttemptLabel.Size = UDim2.new(1, 0, 0, 20)
+AttemptLabel.Position = UDim2.new(0, 0, 0.82, 0)
+AttemptLabel.BackgroundTransparency = 1
+AttemptLabel.Text = "Tentativas restantes: 3"
+AttemptLabel.Font = Enum.Font.GothamBold
+AttemptLabel.TextSize = 11
+AttemptLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+AttemptLabel.Parent = KeyFrame
+
+local function NOTIFY_KEY(text, color)
+    task.spawn(function()
+        local originalText = KeyTitle.Text
+        KeyTitle.TextColor3 = color
+        KeyTitle.Text = text
+        task.wait(2)
+        KeyTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+        KeyTitle.Text = originalText
+    end)
+end
+
+EnterBtn.MouseButton1Click:Connect(function()
+    local inputted = KeyInput.Text
+    if inputted == CorrectKey then
+        NOTIFY_KEY("🔑 CHAVE CORRETA!", Color3.fromRGB(40, 160, 90))
+        task.wait(0.4)
+        KeyFrame:Destroy()
+        Main.Visible = true
+        Open.Visible = true
+    else
+        ErrorCount = ErrorCount + 1
+        local remaining = 3 - ErrorCount
+        AttemptLabel.Text = "Tentativas restantes: " .. remaining
+        
+        if ErrorCount >= 3 then
+            Player:Kick("Erro, usuario sem key, acesse nosso discord para obter.")
+        else
+            NOTIFY_KEY("❌ CHAVE INCORRETA!", Color3.fromRGB(200, 50, 50))
+            KeyInput.Text = ""
+        end
+    end
+end)
+
+
+--// TOPBAR
+local Top = Instance.new("Frame")
+Top.Size = UDim2.new(1, 0, 0, 45)
+Top.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Top.BorderSizePixel = 0
+Top.Parent = Main
+
+Instance.new("UICorner", Top).CornerRadius = UDim.new(0, 18)
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -20, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "✨ SixxinhoAurudo Hub Supremo / V1! - By: SixxinhoAurudo!"
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 13
+Title.TextColor3 = Color3.fromRGB(255, 215, 0)
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.Parent = Top
+
+--// TAB BUTTONS HOLDER
+local Tabs = Instance.new("Frame")
+Tabs.Size = UDim2.new(0, 140, 1, -65)
+Tabs.Position = UDim2.new(0, 12, 0, 55)
+Tabs.BackgroundTransparency = 1
+Tabs.Parent = Main
+
+local TabLayout = Instance.new("UIListLayout", Tabs)
+TabLayout.Padding = UDim.new(0, 6)
+
+--// CONTENT HOLDER
+local ContentHolder = Instance.new("Frame")
+ContentHolder.Size = UDim2.new(1, -175, 1, -65)
+ContentHolder.Position = UDim2.new(0, 163, 0, 55)
+ContentHolder.BackgroundTransparency = 1
+ContentHolder.Parent = Main
+
+--// NOTIFICATION SYSTEM
+local function Notify(Text)
+    task.spawn(function()
+        local NotifyFrame = Instance.new("TextLabel")
+        NotifyFrame.Size = UDim2.new(0, 260, 0, 45)
+        NotifyFrame.Position = UDim2.new(1, 300, 1, -70)
+        NotifyFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        NotifyFrame.Text = "  " .. Text
+        NotifyFrame.TextColor3 = Color3.new(1, 1, 1)
+        NotifyFrame.Font = Enum.Font.GothamBold
+        NotifyFrame.TextSize = 13
+        NotifyFrame.TextXAlignment = Enum.TextXAlignment.Left
+        NotifyFrame.BorderSizePixel = 0
+        NotifyFrame.Parent = GUI
+
+        Instance.new("UICorner", NotifyFrame).CornerRadius = UDim.new(0, 12)
+        local nStroke = Instance.new("UIStroke", NotifyFrame)
+        nStroke.Color = Color3.fromRGB(255, 215, 0)
+
+        TweenService:Create(NotifyFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(1, -280, 1, -70)}):Play()
+        task.wait(2)
+        TweenService:Create(NotifyFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(1, 300, 1, -70)}):Play()
+        task.wait(0.3)
+        NotifyFrame:Destroy()
+    end)
+end
+
+--// TAB SYSTEM
+local function CreateTab(Name)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 0, 38)
+    Button.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+    Button.Text = Name
+    Button.TextColor3 = Color3.new(1, 1, 1)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 13
+    Button.BorderSizePixel = 0
+    Button.Parent = Tabs
+
+    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 10)
+
+    local Page = Instance.new("ScrollingFrame")
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    Page.ScrollBarThickness = 4
+    Page.ScrollBarImageColor3 = Color3.fromRGB(255, 215, 0)
+    Page.BackgroundTransparency = 1
+    Page.Visible = false
+    Page.Parent = ContentHolder
+
+    local Layout = Instance.new("UIListLayout", Page)
+    Layout.Padding = UDim.new(0, 8)
+
+    Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        Page.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 15)
+    end)
+
+    Button.MouseButton1Click:Connect(function()
+        for _, v in ipairs(ContentHolder:GetChildren()) do
+            if v:IsA("ScrollingFrame") then v.Visible = false end
+        end
+        Page.Visible = true
+    end)
+
+    return Page
+end
+
+local toggleExtremeModeExternal = nil
+
+--// TOGGLE CREATOR
+local function CreateToggle(Page, Name, Callback)
+    local Holder = Instance.new("Frame")
+    Holder.Size = UDim2.new(1, -5, 0, 48)
+    Holder.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+    Holder.BorderSizePixel = 0
+    Holder.Parent = Page
+
+    Instance.new("UICorner", Holder).CornerRadius = UDim.new(0, 12)
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = Name
+    Label.Font = Enum.Font.GothamBold
+    Label.TextSize = 13
+    Label.TextColor3 = Color3.new(1, 1, 1)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Holder
+
+    local Toggle = Instance.new("TextButton")
+    Toggle.Size = UDim2.new(0, 65, 0, 26)
+    Toggle.Position = UDim2.new(1, -80, 0.5, -13)
+    Toggle.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+    Toggle.Text = "OFF"
+    Toggle.TextColor3 = Color3.new(1, 1, 1)
+    Toggle.Font = Enum.Font.GothamBold
+    Toggle.TextSize = 12
+    Toggle.BorderSizePixel = 0
+    Toggle.Parent = Holder
+
+    Instance.new("UICorner", Toggle).CornerRadius = UDim.new(1, 0)
+
+    local Enabled = false
+    
+    local function UpdateVisuals()
+        Toggle.Text = Enabled and "ON" or "OFF"
+        TweenService:Create(Toggle, TweenInfo.new(0.2), {
+            BackgroundColor3 = Enabled and Color3.fromRGB(40, 160, 90) or Color3.fromRGB(120, 40, 40)
+        }):Play()
+    end
+
+    Toggle.MouseButton1Click:Connect(function()
+        Enabled = not Enabled
+        UpdateVisuals()
+        task.spawn(Callback, Enabled)
+    end)
+    
+    if Name == "🔥 BOOST MAX (Extreme)" then
+        toggleExtremeModeExternal = function()
+            Enabled = not Enabled
+            UpdateVisuals()
+            task.spawn(Callback, Enabled)
+        end
+    end
+end
+
+--// SCRIPT BUTTON CREATOR
+local function CreateScriptButton(Page, Name, Callback)
+    local Holder = Instance.new("Frame")
+    Holder.Size = UDim2.new(1, -5, 0, 48)
+    Holder.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+    Holder.BorderSizePixel = 0
+    Holder.Parent = Page
+
+    Instance.new("UICorner", Holder).CornerRadius = UDim.new(0, 12)
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.6, 0, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = Name
+    Label.Font = Enum.Font.GothamBold
+    Label.TextSize = 13
+    Label.TextColor3 = Color3.new(1, 1, 1)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Holder
+
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(0, 90, 0, 28)
+    Button.Position = UDim2.new(1, -105, 0.5, -14)
+    Button.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+    Button.Text = "Carregar"
+    Button.TextColor3 = Color3.fromRGB(14, 14, 14)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 12
+    Button.BorderSizePixel = 0
+    Button.Parent = Holder
+
+    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 8)
+
+    Button.MouseButton1Click:Connect(function()
+        task.spawn(Callback)
+    end)
+end
+
+--// CRIAÇÃO DAS ABAS
+local MainTab = CreateTab("🏠 Início")
+local PlayerTab = CreateTab("👤 Jogador")
+local OutrosTab = CreateTab("⚙️ Outros")
+local InfoTab = CreateTab("📊 Info")
+MainTab.Visible = true
+
+--// FPS COUNTER
+local FPSLabel = Instance.new("TextLabel")
+FPSLabel.Size = UDim2.new(0, 110, 0, 32)
+FPSLabel.Position = UDim2.new(0, 10, 0, 10)
+FPSLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+FPSLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+FPSLabel.Font = Enum.Font.GothamBold
+FPSLabel.TextSize = 13
+FPSLabel.Text = "FPS: Calcular..."
+FPSLabel.Parent = GUI
+Instance.new("UICorner", FPSLabel).CornerRadius = UDim.new(0, 10)
+
+local lastFpsUpdate = os.clock()
+local frameCount = 0
+RunService.RenderStepped:Connect(function()
+    frameCount += 1
+    local now = os.clock()
+    if now - lastFpsUpdate >= 1 then
+        FPSLabel.Text = "FPS: " .. frameCount
+        frameCount = 0
+        lastFpsUpdate = now
+    end
+end)
+
+--// DETECTOR DE EXECUTOR
+local ExecutorName = "Desconhecido"
+pcall(function()
+    if identifyexecutor then ExecutorName = identifyexecutor()
+    elseif getexecutorname then ExecutorName = getexecutorname() end
+end)
+
+local ExecLabel = Instance.new("TextLabel")
+ExecLabel.Size = UDim2.new(1, -5, 0, 45)
+ExecLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+ExecLabel.Text = "  Executor: " .. ExecutorName
+ExecLabel.TextColor3 = Color3.new(1, 1, 1)
+ExecLabel.Font = Enum.Font.GothamBold
+ExecLabel.TextSize = 13
+ExecLabel.TextXAlignment = Enum.TextXAlignment.Left
+ExecLabel.BorderSizePixel = 0
+ExecLabel.Parent = InfoTab
+Instance.new("UICorner", ExecLabel).CornerRadius = UDim.new(0, 12)
+
+--// PERFIL DO PLAYER
+local Profile = Instance.new("Frame")
+Profile.Size = UDim2.new(1, -5, 0, 80)
+Profile.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+Profile.BorderSizePixel = 0
+Profile.Parent = PlayerTab
+Instance.new("UICorner", Profile).CornerRadius = UDim.new(0, 12)
+
+local Avatar = Instance.new("ImageLabel")
+Avatar.Size = UDim2.new(0, 60, 0, 60)
+Avatar.Position = UDim2.new(0, 10, 0.5, -30)
+Avatar.BackgroundTransparency = 1
+Avatar.Parent = Profile
+
+task.spawn(function()
+    pcall(function()
+        Avatar.Image = Players:GetUserThumbnailAsync(Player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+    end)
+end)
+
+local Username = Instance.new("TextLabel")
+Username.Size = UDim2.new(1, -95, 0, 25)
+Username.Position = UDim2.new(0, 80, 0, 15)
+Username.BackgroundTransparency = 1
+Username.Text = Player.Name
+Username.TextColor3 = Color3.new(1, 1, 1)
+Username.Font = Enum.Font.GothamBlack
+Username.TextSize = 15
+Username.TextXAlignment = Enum.TextXAlignment.Left
+Username.Parent = Profile
+
+local Display = Instance.new("TextLabel")
+Display.Size = UDim2.new(1, -95, 0, 20)
+Display.Position = UDim2.new(0, 80, 0, 40)
+Display.BackgroundTransparency = 1
+Display.Text = "@" .. Player.DisplayName
+Display.TextColor3 = Color3.fromRGB(170, 170, 170)
+Display.Font = Enum.Font.Gotham
+Display.TextSize = 12
+Display.TextXAlignment = Enum.TextXAlignment.Left
+Display.Parent = Profile
+
+--// BOLA BRANCA CONFIG
+local isWhiteBallActive = false
+local function applyWhiteBall(part)
+    part.Color = Color3.new(1, 1, 1)
+    part.Material = Enum.Material.SmoothPlastic
+    part.CastShadow = false
+    local mesh = part:FindFirstChildOfClass("SpecialMesh")
+    if mesh then mesh.TextureId = "" end
+end
+
+workspace.DescendantAdded:Connect(function(descendant)
+    if isWhiteBallActive and descendant:IsA("BasePart") and (descendant.Shape == Enum.PartType.Ball or descendant.Name:lower():find("ball")) then
+        task.wait(0.1)
+        pcall(applyWhiteBall, descendant)
+    end
+end)
+
+--// FILTRO SOCCER CONFIG
+local isZyckActive = false
+local function optimizeInstanceZyck(obj)
+    if not isZyckActive then return end
+    pcall(function()
+        if obj.Name == "Soccer" and (obj:IsA("BasePart") or obj:IsA("Decal") or obj:IsA("Texture")) then
+            obj.Transparency = 1
+        end
+        if obj:IsA("Part") or obj:IsA("UnionOperation") or obj:IsA("MeshPart") then
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+        elseif (obj:IsA("Decal") or obj:IsA("Texture")) and obj.Name ~= "Soccer" then
+            obj:Destroy()
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
+            obj.Enabled = false
+        end
+    end)
+end
+
+game.DescendantAdded:Connect(function(newObj)
+    if isZyckActive then optimizeInstanceZyck(newObj) end
+end)
+
+--// TOGGLES - INÍCIO
+CreateToggle(MainTab, "🚀 FPS Boost", function(State)
+    Lighting.GlobalShadows = not State
+    Lighting.Brightness = State and 0 or 2
+    pcall(function() settings().Rendering.QualityLevel = State and Enum.QualityLevel.Level01 or Enum.QualityLevel.Automatic end)
+    Notify("FPS Boost " .. (State and "Ligado" or "Desligado"))
+end)
+
+CreateToggle(MainTab, "⚡ Anti Lag", function(State)
+    if State then
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") then v.Enabled = false end
+        end
+    end
+    Notify("Anti Lag " .. (State and "Ativado" or "Desativado"))
+end)
+
+CreateToggle(MainTab, "⚪ Bola Branca (Slow211)", function(State)
+    isWhiteBallActive = State
+    if State then
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v:IsA("BasePart") and (v.Shape == Enum.PartType.Ball or v.Name:lower():find("ball")) then pcall(applyWhiteBall, v) end
+        end
+    end
+    Notify("Bola Branca " .. (State and "Ativada" or "Desativada"))
+end)
+
+CreateToggle(MainTab, "🛠️ Otimização Extrema (Slow)", function(State)
+    if State then
+        for _, v in ipairs(workspace:GetDescendants()) do
+            pcall(function()
+                if v:IsA("BasePart") then v.Material = Enum.Material.Plastic v.Reflectance = 0
+                elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then v.Enabled = false end
+            end)
+        end
+        Lighting.GlobalShadows = false
+    end
+    Notify("Otimização Extrema " .. (State and "Ativada" or "Desativada"))
+end)
+
+CreateToggle(MainTab, "🚫 Filtro Invisível + V4.1 (Zyck)", function(State)
+    isZyckActive = State
+    if State then
+        pcall(function()
+            local Terrain = workspace:FindFirstChildOfClass("Terrain")
+            if Terrain then Terrain.WaterWaveSize = 0 Terrain.WaterWaveSpeed = 0 end
+            Lighting.GlobalShadows = false
+            Lighting.FogEnd = 9e9
+        end)
+        task.spawn(function()
+            local descendants = game:GetDescendants()
+            for i = 1, #descendants do
+                if not isZyckActive then break end
+                optimizeInstanceZyck(descendants[i])
+                if i % 1500 == 0 then task.wait() end
+            end
+        end)
+    end
+    Notify("Filtro Zyck V4.1 " .. (State and "Ativado" or "Desativado"))
+end)
+
+CreateToggle(MainTab, "🔥 BOOST MAX (Extreme)", function(State)
+    if State then
+        pcall(function() Lighting.GlobalShadows = false end)
+        task.spawn(function()
+            local descendants = game:GetDescendants()
+            for i = 1, #descendants do
+                local obj = descendants[i]
+                pcall(function()
+                    if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+                        obj.Material = Enum.Material.SmoothPlastic
+                        obj.CastShadow = false
+                    elseif obj:IsA("Decal") or obj:IsA("Texture") then obj.Transparency = 1
+                    elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then obj.Enabled = false end
+                end)
+                if i % 1500 == 0 then task.wait() end
+            end
+        end)
+    end
+    Notify("Boost Max Extreme " .. (State and "Ativado" or "Desativado"))
+end)
+
+--// TOGGLES - JOGADOR
+CreateToggle(PlayerTab, "⚡ Sprint Custom (24)", function(State)
+    SprintSettings.Enabled = State
+    local character = Player.Character
+    if character and character:FindFirstChildOfClass("Humanoid") then
+        character:FindFirstChildOfClass("Humanoid").WalkSpeed = State and SprintSettings.SprintSpeed or SprintSettings.NormalSpeed
+    end
+    Notify("Sprint 24 " .. (State and "Ativado" or "Desativado"))
+end)
+
+CreateToggle(PlayerTab, "✨ Absurdo (Sem Colisão)", function(State)
+    AbsurdoConfig.Enabled = State
+    Notify("Absurdo " .. (State and "Ativado!" or "Desativado!"))
+end)
+
+CreateToggle(PlayerTab, "⚽ Super Chute / Reach (40)", function(State)
+    ReachSettings.ReachEnabled = State
+    if not State then CleanAllReach() end
+    Notify("Super Chute " .. (State and "ATIVADO!" or "Desativado!"))
+end)
+
+CreateToggle(PlayerTab, "🎯 Alto Desarme Útil (40s)", function(State)
+    DesarmeConfig.Enabled = State
+    if not State then CleanAllDesarme() end
+    Notify("Alto Desarme " .. (State and "ATIVADO!" or "Desativado!"))
+end)
+
+CreateToggle(PlayerTab, "🍬 Ball Chiclete (Magnet)", function(State)
+    ChicleteConfig.Enabled = State
+    if not State then ReleaseChicleteBall() end
+    Notify("Chicletão " .. (State and "ATIVADO!" or "Desativado!"))
+end)
+
+CreateToggle(PlayerTab, "🪑 Anti Sit Absoluto", function(State)
+    if State then _G.AntiSitOn() else _G.AntiSitOff() end
+    Notify("Anti Sit " .. (State and "ATIVADO!" or "Desativado!"))
+end)
+
+CreateToggle(PlayerTab, "🥊 Reach Braço (Theus Script)", function(State)
+    ArmReachConfig.Enabled = State
+    if Player.Character then
+        if State then ApplyArmReach(Player.Character) else ResetArmReach(Player.Character) end
+    end
+    Notify("Reach de Braço " .. (State and "ATIVADO! (Tamanho 20)" or "Desativado!"))
+end)
+
+
+--// ABAS - OUTROS
+CreateScriptButton(OutrosTab, "Tela Limpa", function()
+    Notify("Executando Tela Limpa...")
+    task.spawn(function()
+        local LimparPlayers = game:GetService("Players")
+        local LimparUIS = game:GetService("UserInputService")
+
+        local LocalPlayer = LimparPlayers.LocalPlayer
+        local LimparPlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+        local Limpo = false
+        local GUIsOcultadas = {}
+
+        local function LimparTela()
+            for _, gui in ipairs(LimparPlayerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Name ~= "CleanScreenGUI" and gui.Name ~= "SixxinhoAurudoHubV1" then
+                    GUIsOcultadas[gui] = gui.Enabled
+                    gui.Enabled = false
+                end
+            end
+            Limpo = true
+        end
+
+        local function RestaurarTela()
+            for gui, estado in pairs(GUIsOcultadas) do
+                if gui and gui.Parent then
+                    gui.Enabled = estado
+                end
+            end
+            Limpo = false
+        end
+
+        pcall(function()
+            if LimparPlayerGui:FindFirstChild("CleanScreenGUI") then
+                LimparPlayerGui["CleanScreenGUI"]:Destroy()
+            end
+        end)
+
+        local ScreenGui = Instance.new("ScreenGui")
+        ScreenGui.Name = "CleanScreenGUI"
+        ScreenGui.ResetOnSpawn = false
+        ScreenGui.Parent = LimparPlayerGui
+
+        local Botao = Instance.new("TextButton")
+        Botao.Size = UDim2.new(0, 160, 0, 45)
+        Botao.Position = UDim2.new(0.5, -80, 0.15, 0)
+        Botao.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        Botao.TextColor3 = Color3.new(1,1,1)
+        Botao.TextScaled = true
+        Botao.Text = "🖥️ LIMPAR: OFF"
+        Botao.Parent = ScreenGui
+
+        Botao.MouseButton1Click:Connect(function()
+            if not Limpo then
+                LimparTela()
+                Botao.Text = "🖥️ LIMPAR: ON"
+            else
+                RestaurarTela()
+                Botao.Text = "🖥️ LIMPAR: OFF"
+            end
+        end)
+
+        local dragging = false
+        local dragInput
+        local dragStart
+        local startPos
+
+        local function update(input)
+            local delta = input.Position - dragStart
+            Botao.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+
+        Botao.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+                dragging = true
+                dragStart = input.Position
+                startPos = Botao.Position
+
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+
+        Botao.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+
+        LimparUIS.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then
+                update(input)
+            end
+        end)
+        
+        Notify("Tela Limpa injetada com sucesso!")
+    end)
+end)
+
+CreateScriptButton(OutrosTab, "🌈 Angelo Hub (Original)", function()
+    Notify("Executando Angelo Hub...")
+    task.spawn(function()
+        local AngeloPlayers = game:GetService("Players")
+        local AngeloRunService = game:GetService("RunService")
+        local AngeloUserInputService = game:GetService("UserInputService")
+        local AngeloLighting = game:GetService("Lighting")
+
+        local LP = AngeloPlayers.LocalPlayer
+        local Root, Humanoid
+
+        local function UpdateChar()
+            if LP.Character then
+                Root = LP.Character:FindFirstChild("HumanoidRootPart")
+                Humanoid = LP.Character:FindFirstChildOfClass("Humanoid")
+            end
+        end
+        UpdateChar()
+        LP.CharacterAdded:Connect(UpdateChar)
+
+        local CFG = {
+            Open = true,
+            Atravessar = false,
+            Reach = false,
+            AutoDesarme = false,
+            AntiPulo = false,
+            Speed = false,
+            AntiLag = false,
+            FPS = false
+        }
+
+        local REACH_DIST = 11
+
+        local function GetBall()
+            return workspace:FindFirstChild("Ball")
+                or workspace:FindFirstChild("Football")
+                or workspace:FindFirstChild("SoccerBall")
+        end
+
+        local function AtravessarPlayers()
+            for _,plr in pairs(AngeloPlayers:GetPlayers()) do
+                if plr ~= LP and plr.Character then
+                    for _,p in pairs(plr.Character:GetDescendants()) do
+                        if p:IsA("BasePart") then
+                            p.CanCollide = false
+                        end
+                    end
+                end
+            end
+        end
+
+        local function Reach()
+            local ball = GetBall()
+            if not ball or not Root then return end
+
+            for _,plr in pairs(AngeloPlayers:GetPlayers()) do
+                if plr ~= LP and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local d = (plr.Character.HumanoidRootPart.Position - Root.Position).Magnitude
+                    if d <= REACH_DIST then
+                        ball.CFrame = Root.CFrame * CFrame.new(0,0,-1.8)
+                    end
+                end
+            end
+        end
+
+        local function AutoDesarme()
+            local ball = GetBall()
+            if not ball or not Root then return end
+
+            for _,plr in pairs(AngeloPlayers:GetPlayers()) do
+                if plr ~= LP and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local d = (plr.Character.HumanoidRootPart.Position - Root.Position).Magnitude
+                    if d < 9 then
+                        ball.CFrame = Root.CFrame * CFrame.new(0,0,-2)
+                    end
+                end
+            end
+        end
+
+        local function AntiLagBola()
+            local ball = GetBall()
+            if ball and ball:IsA("BasePart") then
+                pcall(function() ball:SetNetworkOwner(LP) end)
+                ball.AssemblyLinearVelocity *= 0.85
+                ball.AssemblyAngularVelocity *= 0.85
+            end
+        end
+
+        pcall(function()
+            game.CoreGui:FindFirstChild("ANGEL_HUB"):Destroy()
+        end)
+
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "ANGEL_HUB"
+        gui.ResetOnSpawn = false
+        gui.Parent = game.CoreGui
+
+        local main = Instance.new("Frame", gui)
+        main.Size = UDim2.new(0,260,0,380)
+        main.Position = UDim2.new(0.05,0,0.2,0)
+        main.BackgroundColor3 = Color3.fromRGB(20,20,25)
+        main.Active = true
+        main.Draggable = true
+        main.Visible = CFG.Open
+
+        local title = Instance.new("TextLabel", main)
+        title.Size = UDim2.new(1,0,0,40)
+        title.BackgroundColor3 = Color3.fromRGB(140,0,255)
+        title.Text = "🌈 ANGELO HUB"
+        title.TextColor3 = Color3.new(1,1,1)
+        title.Font = Enum.Font.GothamBold
+        title.TextScaled = true
+
+        local function MakeBtn(nome, ordem, callback)
+            local b = Instance.new("TextButton", main)
+            b.Size = UDim2.new(1,-20,0,38)
+            b.Position = UDim2.new(0,10,0,50 + ordem*42)
+            b.BackgroundColor3 = Color3.fromRGB(90,0,0)
+            b.TextColor3 = Color3.new(1,1,1)
+            b.Font = Enum.Font.GothamBold
+            b.TextScaled = true
+            b.Text = nome.." [OFF]"
+
+            b.MouseButton1Click:Connect(function()
+                CFG[nome] = not CFG[nome]
+                b.Text = nome.." ["..(CFG[nome] and "ON" or "OFF").."]"
+                b.BackgroundColor3 = CFG[nome] and Color3.fromRGB(0,180,120) or Color3.fromRGB(90,0,0)
+                callback(CFG[nome])
+            end)
+        end
+
+        MakeBtn("Atravessar",0,function() end)
+        MakeBtn("Reach",1,function() end)
+        MakeBtn("AutoDesarme",2,function() end)
+        MakeBtn("AntiPulo",3,function(v)
+            if Humanoid then Humanoid.JumpPower = v and 0 or 50 end
+        end)
+        MakeBtn("Speed",4,function(v)
+            if Humanoid then Humanoid.WalkSpeed = v and 45 or 16 end
+        end)
+        MakeBtn("AntiLag",5,function() end)
+        MakeBtn("FPS",6,function(v)
+            if v then
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+                AngeloLighting.GlobalShadows = false
+            else
+                AngeloLighting.GlobalShadows = true
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+            end
+        end)
+
+        local toggle = Instance.new("TextButton", gui)
+        toggle.Size = UDim2.new(0,140,0,35)
+        toggle.Position = UDim2.new(0.05,0,0.1,0)
+        toggle.Text = "ANGEL HUB"
+        toggle.BackgroundColor3 = Color3.fromRGB(140,0,255)
+        toggle.TextColor3 = Color3.new(1,1,1)
+        toggle.Font = Enum.Font.GothamBold
+
+        toggle.MouseButton1Click:Connect(function()
+            CFG.Open = not CFG.Open
+            main.Visible = CFG.Open
+        end)
+
+        AngeloUserInputService.InputBegan:Connect(function(i,g)
+            if not g and i.KeyCode == Enum.KeyCode.P then
+                CFG.Open = not CFG.Open
+                main.Visible = CFG.Open
+            end
+        end)
+
+        AngeloRunService.Heartbeat:Connect(function()
+            if CFG.Atravessar then AtravessarPlayers() end
+            if CFG.Reach then Reach() end
+            if CFG.AutoDesarme then AutoDesarme() end
+            if CFG.AntiLag then AntiLagBola() end
+        end)
+
+        print("✅ ANGEL HUB carregado com sucesso!")
+    end)
+end)
+
+CreateScriptButton(OutrosTab, "🕺 Script De Emote", function()
+    Notify("Carregando Script De Emote...")
+    pcall(function()
+        loadstring(game:HttpGet("https://pastefy.app/lAdApmz4/raw"))()
+        Notify("Script De Emote executado!")
+    end)
+end)
+
+CreateScriptButton(OutrosTab, "🦅 Script De Voar", function()
+    Notify("Carregando Script De Voar...")
+    pcall(function()
+        loadstring(game:HttpGet("https://pastefy.app/IHIgGN9b/raw"))()
+        Notify("Script De Voar executado!")
+    end)
+end)
+
+CreateScriptButton(OutrosTab, "🌑 Shadow Mods", function()
+    Notify("Carregando Shadow Mods...")
+    pcall(function()
+        loadstring(game:HttpGet("https://pastefy.app/iQzbaBGE/raw"))()
+        Notify("Shadow Mods executado!")
+    end)
+end)
+
+CreateScriptButton(OutrosTab, "🔌 Lag Switch", function()
+    Notify("Carregando Lag Switch...")
+    pcall(function()
+        loadstring(game:HttpGet("https://pastefy.app/zZo7yoUB/raw"))()
+        Notify("Lag Switch executado!")
+    end)
+end)
+
+CreateScriptButton(OutrosTab, "❤️ Loved Hub", function()
+    Notify("Carregando Loved Hub...")
+    pcall(function()
+        loadstring(game:HttpGet("https://pastefy.app/AccDN8CV/raw"))()
+        Notify("Loved Hub executado!")
+    end)
+end)
+
+CreateScriptButton(OutrosTab, "🖥️ Tela Esticada", function()
+    Notify("Carregando Tela Esticada...")
+    pcall(function()
+        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-stretched-screen-v2-210562"))()
+        Notify("Tela Esticada executada!")
+    end)
+end)
+
+--// GARBAGE COLLECTOR
+task.spawn(function()
+    while true do
+        task.wait(30)
+        pcall(function() collectgarbage("collect") end)
+    end
+end)
+
+--// CONTROLE VISIBILIDADE (OPEN/CLOSE)
+local function ToggleVisibility()
+    if not GUI:FindFirstChild("KeyVerificationFrame") then
+        Main.Visible = not Main.Visible
+        if Blur then
+            TweenService:Create(Blur, TweenInfo.new(0.2), {Size = Main.Visible and 14 or 0}):Play()
+        end
+    end
+end
+
+Open.MouseButton1Click:Connect(ToggleVisibility)
+
+--// DETECTA CLIQUES NO TECLADO (PC)
+UserInputService.InputBegan:Connect(function(Input, GPE)
+    if GPE then return end
+    if Input.KeyCode == Enum.KeyCode.P then 
+        ToggleVisibility()
+    elseif Input.KeyCode == Enum.KeyCode.L and toggleExtremeModeExternal then 
+        toggleExtremeModeExternal() 
+    end
+end)
+
+print("🔒 SixxinhoAurudo Hub Supremo / V1! - Mobile Fix Aplicado.")
